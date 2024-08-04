@@ -32,16 +32,52 @@ class CustomWebsite extends EmbeddedWebsite {
   }
 }
 
+
+const controllableListeners: {[id: number]: (message: any) => void} = {}
+
 class Controllable extends EmbeddedWebsite {
+  static nextId = 0
+
+  private iframe: HTMLIFrameElement
+  private controllableId: number
+
   constructor(
-    shaderId: string
+    url: string, 
+    private id: number, 
   ) {
     const iframe = document.createElement('iframe')
-    iframe.src = `http://localhost:8080/?shaderId=${shaderId}`
+    iframe.src = url
     iframe.style.width = '100%'
     iframe.style.height = '100%'
 
     super(iframe)
+
+    this.iframe = iframe
+    this.controllableId = Controllable.nextId++
+
+    this.iframe.addEventListener('load', () => {
+      console.log('controllable iframe loaded') 
+      this.iframe.contentWindow?.postMessage({
+        protocol: 'av-controls', 
+        type: 'you-are', 
+        id: this.controllableId, 
+      }, '*')
+    })
+
+    controllableListeners[this.controllableId] = (message) => {
+      console.log('message from controllable', message)
+      window.opener.postMessage({
+        type: 'message-from-website', 
+        payload: {
+          id: this.id, 
+          message
+        }
+      }, '*')
+    }
+  }
+
+  onMessage(message: any) {
+    this.iframe.contentWindow?.postMessage(message, '*')
   }
 }
 
@@ -71,11 +107,9 @@ class YoutubeVideo extends EmbeddedWebsite {
       videoId,
       events: {
         'onReady': () => {
-          console.log('ready')
           player.playVideo()
         }, 
         'onStateChange': () => {
-          console.log('state change')
           // restart if ended
           if (player.getPlayerState() === 0) {
             player.seekTo(0)
@@ -83,8 +117,6 @@ class YoutubeVideo extends EmbeddedWebsite {
         }
       }
     });
-
-    console.log(player)
 
     super(iframe)
 
@@ -101,6 +133,7 @@ class ShadertoyShader extends EmbeddedWebsite {
     const iframe = document.createElement('iframe')
 
     iframe.setAttribute('frameborder', '0')
+    iframe.setAttribute('loading', 'lazy')
 
     iframe.src = shadertoyUrl + shaderId + shadertoyOptions
     iframe.style.width = '100%'
@@ -142,10 +175,6 @@ class WebsiteStack {
   }
 
   public addWebsite(website: EmbeddedWebsite, id: number) {
-    // websites always get added to the top
-    // initial opacity is 0
-    // can then be moved around
-    console.log('eigentich bewegen wir hier ein html element') 
     const container = website.getContainer()
     container.style.opacity = '0'
     container.style.zIndex = this.order.length.toString()
@@ -168,7 +197,6 @@ class WebsiteStack {
     const website = this.websites[id]
     if(website !== undefined) {
       const iframe = website.getContainer()
-      console.log('iframe', iframe)
       iframe.style.opacity = opacity.toString()
     }
   }
@@ -177,7 +205,6 @@ class WebsiteStack {
     const website = this.websites[id]
     if(website !== undefined) {
       const iframe = website.getContainer()
-      console.log('iframe', iframe)
       iframe.style.setProperty('mix-blend-mode', blendMode)
     }
   }
@@ -224,7 +251,7 @@ class WebsiteStack {
   }
 }
 
-let YT: any
+let YT: any = undefined
 function initializeYoutubeAPI() {
   return new Promise<void>((resolve, reject) => {
     // watchdog
@@ -249,7 +276,12 @@ const youtubeReadyListeners = [] as (() => void)[]
 }
 
 async function main() {
-  await initializeYoutubeAPI()
+  try {
+    await initializeYoutubeAPI()
+  } catch {
+    console.error('youtube api failed to load, youtube videos will not work')
+  }
+
   const stackContainer = document.getElementById('stack-container')!
   const websiteStack = new WebsiteStack(stackContainer)
 
@@ -259,36 +291,47 @@ async function main() {
   
   window.addEventListener('message', (event) => {
     console.log('received message', event.data)
-    const type = event.data.type
-    const payload = event.data.payload
-    if(type === 'add-website') {
-      if(payload.website === 'custom') {
-        websiteStack.addWebsite(new CustomWebsite(payload.iframe), payload.id)
-      } else if(payload.website === 'controllable') {
-        websiteStack.addWebsite(new Controllable(payload.shaderId), payload.id)
-      } else if(payload.website === 'shadertoy') {
-        websiteStack.addWebsite(new ShadertoyShader(payload.shaderId), payload.id)
-      } else if(payload.website === 'youtube') {
-        websiteStack.addWebsite(new YoutubeVideo(payload.videoId), payload.id)
+    const protocol = event.data.protocol
+    if(protocol == 'av-controls') {
+      const id = event.data.id
+      const listener = controllableListeners[id]
+      if(listener !== undefined) {
+        listener(event.data.message)
       }
-    } else if (type === 'remove-website') {
-      websiteStack.removeWebsite(payload.id)
-    } else if (type === 'set-opacity') {
-      websiteStack.setWebsiteOpacity(payload.id, payload.opacity)
-    } else if (type === 'set-blend-mode') {
-      websiteStack.setWebsiteBlendMode(payload.id, payload.blendMode)
-    } else if (type === 'arrange') {
-      if(payload.position === 'below') {
-        websiteStack.moveWebsiteBelow(payload.id, payload.referenceId)
-      } else if (payload.position === 'top') {
-        websiteStack.moveWebsiteToTop(payload.id)
+    } else if (protocol == 'wj-mixer') {
+      const type = event.data.type
+      const payload = event.data.payload
+      if(type === 'add-website') {
+        if(payload.website === 'custom') {
+          websiteStack.addWebsite(new CustomWebsite(payload.iframe), payload.id)
+        } else if(payload.website === 'controllable') {
+          websiteStack.addWebsite(new Controllable(payload.url, payload.id), payload.id)
+        } else if(payload.website === 'shadertoy') {
+          websiteStack.addWebsite(new ShadertoyShader(payload.shaderId), payload.id)
+        } else if(payload.website === 'youtube') {
+          if(YT !== undefined) {
+            websiteStack.addWebsite(new YoutubeVideo(payload.videoId), payload.id)
+          }
+        }
+      } else if (type === 'remove-website') {
+        websiteStack.removeWebsite(payload.id)
+      } else if (type === 'set-opacity') {
+        websiteStack.setWebsiteOpacity(payload.id, payload.opacity)
+      } else if (type === 'set-blend-mode') {
+        websiteStack.setWebsiteBlendMode(payload.id, payload.blendMode)
+      } else if (type === 'arrange') {
+        if(payload.position === 'below') {
+          websiteStack.moveWebsiteBelow(payload.id, payload.referenceId)
+        } else if (payload.position === 'top') {
+          websiteStack.moveWebsiteToTop(payload.id)
+        }
+      } else if (type === 'disable') {
+        websiteStack.disableWebsite(payload.id)
+      } else if (type === 'enable') {
+        websiteStack.enableWebsite(payload.id)
+      } else if (type === 'routeMessage') { // forward message to the website
+        websiteStack.routeMessage(payload.id, payload.message)
       }
-    } else if (type === 'disable') {
-      websiteStack.disableWebsite(payload.id)
-    } else if (type === 'enable') {
-      websiteStack.enableWebsite(payload.id)
-    } else if (type === 'routeMessage') { // forward message to the website
-      websiteStack.routeMessage(payload.id, payload.message)
     }
   })
 

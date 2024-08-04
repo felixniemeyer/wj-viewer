@@ -56,7 +56,6 @@ class Controllable extends EmbeddedWebsite {
     this.controllableId = Controllable.nextId++
 
     this.iframe.addEventListener('load', () => {
-      console.log('controllable iframe loaded') 
       this.iframe.contentWindow?.postMessage({
         protocol: 'av-controls', 
         type: 'you-are', 
@@ -67,7 +66,7 @@ class Controllable extends EmbeddedWebsite {
     controllableListeners[this.controllableId] = (message) => {
       console.log('message from controllable', message)
       window.opener.postMessage({
-        type: 'message-from-website', 
+        type: 'av-controls', 
         payload: {
           id: this.id, 
           message
@@ -77,6 +76,7 @@ class Controllable extends EmbeddedWebsite {
   }
 
   onMessage(message: any) {
+    console.log('message to controllable', message)
     this.iframe.contentWindow?.postMessage(message, '*')
   }
 }
@@ -271,7 +271,6 @@ function initializeYoutubeAPI() {
 
 const youtubeReadyListeners = [] as (() => void)[]
 (globalThis as any).onYouTubeIframeAPIReady = () => {
-  console.log('youtube api ready')
   youtubeReadyListeners.forEach(listener => listener())
 }
 
@@ -290,13 +289,12 @@ async function main() {
   // websiteStack.addWebsite(new YoutubeVideo('-YJ388owgBE'))
   
   window.addEventListener('message', (event) => {
-    console.log('received message', event.data)
     const protocol = event.data.protocol
     if(protocol == 'av-controls') {
-      const id = event.data.id
+      const id = event.data.receiverId
       const listener = controllableListeners[id]
       if(listener !== undefined) {
-        listener(event.data.message)
+        listener(event.data)
       }
     } else if (protocol == 'wj-mixer') {
       const type = event.data.type
@@ -329,7 +327,7 @@ async function main() {
         websiteStack.disableWebsite(payload.id)
       } else if (type === 'enable') {
         websiteStack.enableWebsite(payload.id)
-      } else if (type === 'routeMessage') { // forward message to the website
+      } else if (type === 'message') { // forward message to the website
         websiteStack.routeMessage(payload.id, payload.message)
       }
     }

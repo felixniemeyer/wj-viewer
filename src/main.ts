@@ -47,8 +47,6 @@ class Controllable extends EmbeddedWebsite {
   ) {
     const iframe = document.createElement('iframe')
     iframe.src = url
-    iframe.style.width = '100%'
-    iframe.style.height = '100%'
 
     super(iframe)
 
@@ -64,7 +62,6 @@ class Controllable extends EmbeddedWebsite {
     })
 
     controllableListeners[this.controllableId] = (message) => {
-      console.log('message from controllable', message)
       window.opener.postMessage({
         type: 'av-controls', 
         payload: {
@@ -76,7 +73,6 @@ class Controllable extends EmbeddedWebsite {
   }
 
   onMessage(message: any) {
-    console.log('message to controllable', message)
     this.iframe.contentWindow?.postMessage(message, '*')
   }
 }
@@ -86,7 +82,7 @@ ytPrepareContainer.style.display = 'none'
 ytPrepareContainer.id = 'yt-prepare'
 
 document.body.appendChild(ytPrepareContainer)
-const ytParams = 'enablejsapi=1&autoplay=1&mute=1&controls=0&showinfo=0&autohide=1&modestbranding=1&rel=0'
+const ytParams = 'enablejsapi=1&autoplay=1&mute=1&controls=0&showinfo=0&autohide=1&modestbranding=1'
 class YoutubeVideo extends EmbeddedWebsite {
   player: any
 
@@ -121,6 +117,24 @@ class YoutubeVideo extends EmbeddedWebsite {
     super(iframe)
 
     this.player = player
+  }
+}
+
+const cablesUrl = "https://cables.gl/view/"
+class CablesProject extends EmbeddedWebsite {
+  constructor(
+    projectId: string, 
+  ) {
+    const iframe = document.createElement('iframe')
+
+    iframe.setAttribute('frameborder', '0')
+    iframe.setAttribute('loading', 'lazy')
+
+    iframe.src = cablesUrl + projectId 
+    iframe.style.width = '100%'
+    iframe.style.height = '100%'
+
+    super(iframe)
   }
 }
 
@@ -186,11 +200,15 @@ class WebsiteStack {
 
   public removeWebsite(id: number) {
     const website = this.websites[id]
-    this.container.removeChild(website.getContainer())
-    delete this.websites[id]
+    if(website === undefined) {
+      console.error('failed to remove website that does not exist, id:', id)
+    } else {
+      this.container.removeChild(website.getContainer())
+      delete this.websites[id]
 
-    // remove from order
-    this.order = this.order.filter(orderId => orderId !== id)
+      // remove from order
+      this.order = this.order.filter(orderId => orderId !== id)
+    } 
   }
 
   public setWebsiteOpacity(id: number, opacity: number) {
@@ -206,6 +224,14 @@ class WebsiteStack {
     if(website !== undefined) {
       const iframe = website.getContainer()
       iframe.style.setProperty('mix-blend-mode', blendMode)
+    }
+  }
+
+  public setWebsiteScale(id: number, scale: number) {
+    const website = this.websites[id]
+    if(website !== undefined) {
+      const iframe = website.getContainer()
+      iframe.style.transform = `scale(${scale})`
     }
   }
 
@@ -251,7 +277,6 @@ class WebsiteStack {
   }
 }
 
-let YT: any = undefined
 function initializeYoutubeAPI() {
   return new Promise<void>((resolve, reject) => {
     // watchdog
@@ -269,8 +294,10 @@ function initializeYoutubeAPI() {
   })
 }
 
+let YT: any = undefined
 const youtubeReadyListeners = [] as (() => void)[]
 (globalThis as any).onYouTubeIframeAPIReady = () => {
+  YT = (globalThis as any).YT
   youtubeReadyListeners.forEach(listener => listener())
 }
 
@@ -301,12 +328,15 @@ async function main() {
       const payload = event.data.payload
       if(type === 'add-website') {
         if(payload.website === 'custom') {
-          websiteStack.addWebsite(new CustomWebsite(payload.iframe), payload.id)
+          websiteStack.addWebsite(new CustomWebsite(payload.url), payload.id)
         } else if(payload.website === 'controllable') {
           websiteStack.addWebsite(new Controllable(payload.url, payload.id), payload.id)
         } else if(payload.website === 'shadertoy') {
           websiteStack.addWebsite(new ShadertoyShader(payload.shaderId), payload.id)
+        } else if(payload.website === 'cables') {
+          websiteStack.addWebsite(new CablesProject(payload.projectId), payload.id)
         } else if(payload.website === 'youtube') {
+          console.log('should add youtube', YT)
           if(YT !== undefined) {
             websiteStack.addWebsite(new YoutubeVideo(payload.videoId), payload.id)
           }
@@ -317,6 +347,8 @@ async function main() {
         websiteStack.setWebsiteOpacity(payload.id, payload.opacity)
       } else if (type === 'set-blend-mode') {
         websiteStack.setWebsiteBlendMode(payload.id, payload.blendMode)
+      } else if (type === 'set-scale') {
+        websiteStack.setWebsiteScale(payload.id, payload.scale)
       } else if (type === 'arrange') {
         if(payload.position === 'below') {
           websiteStack.moveWebsiteBelow(payload.id, payload.referenceId)
@@ -329,6 +361,8 @@ async function main() {
         websiteStack.enableWebsite(payload.id)
       } else if (type === 'message') { // forward message to the website
         websiteStack.routeMessage(payload.id, payload.message)
+      } else if (type === 'reload') {
+        window.location.reload()
       }
     }
   })

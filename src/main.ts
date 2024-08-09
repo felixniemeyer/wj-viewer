@@ -183,6 +183,8 @@ class WebsiteStack {
   private order: number[] = []
   private websites: {[id: number]: EmbeddedWebsite} = {}
 
+
+
   constructor(
     private container: HTMLElement
   ) {
@@ -227,12 +229,31 @@ class WebsiteStack {
     }
   }
 
+  private scale = 1
   public setWebsiteScale(id: number, scale: number) {
     const website = this.websites[id]
     if(website !== undefined) {
       const iframe = website.getContainer()
       iframe.style.transform = `scale(${scale})`
+      this.scale = scale
     }
+  }
+
+  private lowresScale = 1
+  public setWebsiteLowres(id: number, lowres: number) {
+    const website = this.websites[id]
+    if(website !== undefined) {
+      const iframe = website.getContainer()
+      iframe.style.width = 100/lowres + '%'
+      iframe.style.height = 100/lowres + '%'
+      this.lowresScale = lowres
+      this.updateScale(iframe)
+    }
+  }
+
+  private updateScale(iframe: HTMLDivElement) {
+    const totalScale = this.scale * this.lowresScale
+    iframe.style.transform = `translate(-50%, -50%) scale(${totalScale})`
   }
 
   public moveWebsiteToTop(id: number) {
@@ -349,6 +370,8 @@ async function main() {
         websiteStack.setWebsiteBlendMode(payload.id, payload.blendMode)
       } else if (type === 'set-scale') {
         websiteStack.setWebsiteScale(payload.id, payload.scale)
+      } else if (type === 'set-lowres') {
+        websiteStack.setWebsiteLowres(payload.id, payload.lowres)
       } else if (type === 'arrange') {
         if(payload.position === 'below') {
           websiteStack.moveWebsiteBelow(payload.id, payload.referenceId)
@@ -363,7 +386,7 @@ async function main() {
         websiteStack.routeMessage(payload.id, payload.message)
       } else if (type === 'reload') {
         window.location.reload()
-      }
+      } 
     }
   })
 

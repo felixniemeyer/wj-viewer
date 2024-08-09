@@ -35,6 +35,8 @@ class CustomWebsite extends EmbeddedWebsite {
 
 const controllableListeners: {[id: number]: (message: any) => void} = {}
 
+
+
 class Controllable extends EmbeddedWebsite {
   static nextId = 0
 
@@ -53,13 +55,23 @@ class Controllable extends EmbeddedWebsite {
     this.iframe = iframe
     this.controllableId = Controllable.nextId++
 
-    this.iframe.addEventListener('load', () => {
-      this.iframe.contentWindow?.postMessage({
-        protocol: 'av-controls', 
-        type: 'you-are', 
-        id: this.controllableId, 
-      }, '*')
-    })
+    console.log('sending you-are message', this.controllableId)
+    const requestAnnouncement = () => {
+      console.log('sending you-are') 
+      if(!receivedReceiverAnnouncements[this.controllableId]) {
+        setTimeout(() => {
+          this.iframe.contentWindow?.postMessage({
+            protocol: 'av-controls', 
+            type: 'you-are', 
+            id: this.controllableId, 
+          }, '*')
+        })
+        setTimeout(requestAnnouncement, 500)
+      } else {
+        delete receivedReceiverAnnouncements[this.controllableId]
+      }
+    }
+    this.iframe.addEventListener('load', requestAnnouncement)
 
     controllableListeners[this.controllableId] = (message) => {
       window.opener.postMessage({
@@ -234,8 +246,8 @@ class WebsiteStack {
     const website = this.websites[id]
     if(website !== undefined) {
       const iframe = website.getContainer()
-      iframe.style.transform = `scale(${scale})`
       this.scale = scale
+      this.updateScale(iframe)
     }
   }
 
@@ -322,6 +334,9 @@ const youtubeReadyListeners = [] as (() => void)[]
   youtubeReadyListeners.forEach(listener => listener())
 }
 
+const receivedReceiverAnnouncements = {
+} as {[id: number]: boolean}
+
 async function main() {
   try {
     await initializeYoutubeAPI()
@@ -340,6 +355,9 @@ async function main() {
     const protocol = event.data.protocol
     if(protocol == 'av-controls') {
       const id = event.data.receiverId
+      if(event.data.type === 'announce-receiver') {
+        receivedReceiverAnnouncements[id] = true
+      }
       const listener = controllableListeners[id]
       if(listener !== undefined) {
         listener(event.data)

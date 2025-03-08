@@ -366,6 +366,10 @@ async function main() {
       const type = event.data.type
       const payload = event.data.payload
       if(type === 'add-website') {
+        const tutorial = document.getElementById('tutorial')
+        if(tutorial !== null) {
+          tutorial.style.display = 'none'
+        }
         if(payload.website === 'custom') {
           websiteStack.addWebsite(new CustomWebsite(payload.url), payload.id)
         } else if(payload.website === 'controllable') {

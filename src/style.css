@@ -4,6 +4,8 @@ body {
   height: 100%;
   overflow: hidden;
   background-color: #000;
+  color: #fff; 
+  font-family: sans-serif; 
 }
 
 iframe {
@@ -24,3 +26,11 @@ iframe {
   transition: opacity 2s ease-out, transform 2s ease-out, width 2s ease-out, height 2s ease-out;
 }
 
+#tutorial {
+  position: absolute;
+  text-align: center; 
+  /* centered */
+  left: 50%; 
+  top: 50%; 
+  transform: translate(-50%, -50%); 
+}
